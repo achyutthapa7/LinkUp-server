@@ -4,20 +4,20 @@ import sendOtp from "../helpers/sendOtp.js";
 import cron from "node-cron";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-// cron.schedule("*/5 * * * *", async (req, res) => {
-//   try {
-//     const result = await userModel.deleteMany({
-//       isVerified: false,
-//     });
-//     if (result.deletedCount > 0) {
-//       console.log(
-//         `Deleted ${result.deletedCount} unverified users with expired verification codes.`
-//       );
-//     }
-//   } catch (error) {
-//     console.error(`Error while deleting unverified users: ${error.message}`);
-//   }
-// });
+cron.schedule("*/5 * * * *", async (req, res) => {
+  try {
+    const result = await userModel.deleteMany({
+      isVerified: false,
+    });
+    if (result.deletedCount > 0) {
+      console.log(
+        `Deleted ${result.deletedCount} unverified users with expired verification codes.`
+      );
+    }
+  } catch (error) {
+    console.error(`Error while deleting unverified users: ${error.message}`);
+  }
+});
 
 export const registration = async (req, res) => {
   const { firstName, lastName, dateOfBirth, gender, emailAddress } = req.body;
@@ -166,14 +166,13 @@ export const confirmPassword = async (req, res) => {
       return res.status(402).json({ message: "password doesn't match" });
     }
     res.cookie("token", token);
-    const updatedUser = await userModel.findOneAndUpdate(
-      { emailAddress },
-      { $set: { isLoggedIn: true } },
-      { new: true }
-    );
+    // const updatedUser = await userModel.findOne(
+    //   { emailAddress },
+    //   { new: true }
+    // );
     res.status(200).json({
       message: "You are registered successfully",
-      user: updatedUser,
+      user,
       token,
     });
   } catch (error) {
@@ -181,6 +180,29 @@ export const confirmPassword = async (req, res) => {
     res.status(500).json({
       message: "An error occurred while confirming password." + error.message,
     });
+  }
+};
+
+export const addProfilePicture = async (req, res) => {
+  try {
+    const url = `http://localhost:4000/images/${req.file.filename}`;
+    const emailAddress = req.params.emailAddress;
+    const user = await userModel.findOneAndUpdate(
+      { emailAddress },
+      { profilePicture: url },
+      { new: true }
+    );
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res
+      .status(200)
+      .json({ message: "Profile picture added successfully", user });
+  } catch (error) {
+    console.error(error.message);
+    res
+      .status(500)
+      .json({ message: "An error occurred while adding profile picture." });
   }
 };
 
@@ -214,7 +236,7 @@ export const logout = async (req, res) => {
     const emailAddress = req.rootUser.emailAddress;
     const user = await userModel.findOneAndUpdate(
       { emailAddress },
-      { isLoggedIn: false },
+      { $set: { isLoggedIn: false } },
       { new: true }
     );
     if (!user) {
@@ -251,28 +273,11 @@ export const getUserProfile = async (req, res) => {
   }
 };
 
-export const addProfilePicture = async (req, res) => {
-  try {
-    const url = `http://localhost:4000/images/${req.file.filename}`;
-    const emailAddress = req.params.emailAddress;
-    const user = await userModel.findOneAndUpdate(
-      { emailAddress },
-      { profilePicture: url },
-      { new: true }
-    );
-    if (!user) {
-      return res.status(404).json({ message: "User not found" });
-    }
-    res
-      .status(200)
-      .json({ message: "Profile picture added successfully", user });
-  } catch (error) {
-    console.error(error.message);
-    res
-      .status(500)
-      .json({ message: "An error occurred while adding profile picture." });
-  }
-};
+
+//change profile picture
+//change username
+//change password
+//forget password
 
 export const sendFriendRequests = async (req, res) => {
   try {
