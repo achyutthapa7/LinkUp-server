@@ -4,6 +4,8 @@ import sendOtp from "../helpers/sendOtp.js";
 import cron from "node-cron";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
+import { commentModel } from "../models/Comments.model.js";
+// Cron job to delete unverified users with expired verification codes every 5 minutes
 cron.schedule("*/5 * * * *", async (req, res) => {
   try {
     const result = await userModel.deleteMany({
@@ -19,6 +21,7 @@ cron.schedule("*/5 * * * *", async (req, res) => {
   }
 });
 
+//registration
 export const registration = async (req, res) => {
   const { firstName, lastName, dateOfBirth, gender, emailAddress } = req.body;
   //5 digits otp
@@ -52,6 +55,7 @@ export const registration = async (req, res) => {
   }
 };
 
+//verification
 export const verification = async (req, res) => {
   try {
     const { verificationCode } = req.body;
@@ -92,6 +96,7 @@ export const verification = async (req, res) => {
   }
 };
 
+//create username
 export const createUserName = async (req, res) => {
   const emailAddress = req.params.emailAddress;
   try {
@@ -124,6 +129,40 @@ export const createUserName = async (req, res) => {
   }
 };
 
+//change username
+export const changeUserName = async (req, res) => {
+  const emailAddress = req.rootUser.emailAddress;
+  try {
+    const user = await userModel.findOne({
+      emailAddress,
+    });
+    if (!user) {
+      return res.status(404).json({ message: "user not found" });
+    }
+    const { userName } = req.body;
+    const userNameExsits = await userModel.findOne({ userName });
+    if (userNameExsits) {
+      return res
+        .status(402)
+        .json({ message: "username already in use, try another" });
+    }
+    const updatedUser = await userModel.findOneAndUpdate(
+      { emailAddress },
+      { $set: { userName } },
+      { new: true }
+    );
+    res
+      .status(200)
+      .json({ message: "username updated successfully", user: updatedUser });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({
+      message: "An error occurred while creating username." + error.message,
+    });
+  }
+};
+
+//create password
 export const createPassword = async (req, res) => {
   try {
     const { password } = req.body;
@@ -149,6 +188,7 @@ export const createPassword = async (req, res) => {
   }
 };
 
+//confirm password
 export const confirmPassword = async (req, res) => {
   try {
     const { confirmPassword } = req.body;
@@ -183,6 +223,102 @@ export const confirmPassword = async (req, res) => {
   }
 };
 
+//change password
+export const changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const emailAddress = req.rootUser.emailAddress;
+    const user = await userModel.findOne({ emailAddress });
+    const passwordIsCorrect = await bcrypt.compare(
+      currentPassword,
+      user.password
+    );
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    if (!passwordIsCorrect) {
+      return res.status(402).json({ message: "Current password is incorrect" });
+    }
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const updatedUser = await userModel.findOneAndUpdate(
+      { emailAddress },
+      { $set: { password: hashedPassword } },
+      { new: true }
+    );
+    res
+      .status(200)
+      .json({ message: "Password updated successfully", user: updatedUser });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({
+      message: "An error occurred while changing password." + error.message,
+    });
+  }
+};
+
+//forgot password
+export const forgetPassword = async (req, res) => {
+  const verificationCode = Math.floor(Math.random() * 89999 + 10000).toString();
+  const title = "Reset Your Password";
+  const heading = "Reset Your Password";
+  const paragraph =
+    "Forgot Your Password? Your password will be reset when you verify your one time password";
+  try {
+    const { emailAddress } = req.body;
+    const user = await userModel.findOne({ emailAddress: emailAddress });
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    // sendOtp(verificationCode, emailAddress, title, heading, paragraph);
+    const updatedUser = new userModel.findOneAndUpdate(
+      { emailAddress },
+      { passwordVerificationCode: verificationCode },
+      { new: true }
+    );
+    await updatedUser.save();
+    res.status(200).json({
+      message: "one time password is sent to" + emailAddress,
+    });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({
+      message:
+        "An error occurred while sending password reset email." + error.message,
+    });
+  }
+};
+
+//reset password
+export const resetPassword = async (req, res) => {
+  try {
+    const { passwordVerificationCode, newPassword } = req.body;
+    const user = await userModel.findOne({
+      passwordVerificationCode,
+    });
+    if (!user) {
+      return res
+        .status(404)
+        .json({ message: "password verification code is incorrect" });
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    const updatedUser = await userModel.findOneAndUpdate(
+      { passwordVerificationCode },
+      { $set: { password: hashedPassword } },
+      { new: true }
+    );
+    res
+      .status(200)
+      .json({ message: "Password reset successfully", user: updatedUser });
+  } catch (error) {
+    console.error(error.message);
+    res.status(500).json({
+      message: "An error occurred while resetting password." + error.messgae,
+    });
+  }
+};
+
+//add profile picture
 export const addProfilePicture = async (req, res) => {
   try {
     const url = `http://localhost:4000/images/${req.file.filename}`;
@@ -206,6 +342,28 @@ export const addProfilePicture = async (req, res) => {
   }
 };
 
+//update profile picture
+export const changeProfilePicture = async (req, res) => {
+  const url = `http://localhost:4000/images/${req.file.filename}`;
+  const emailAddress = req.rootUser.emailAddress;
+  try {
+    const user = await userModel.findOneAndUpdate(
+      { emailAddress },
+      { $set: { profilePicture: url } }
+    );
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    res
+      .status(200)
+      .json({ message: "Profile picture updated successfully", user });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error while changing profile picture" });
+  }
+};
+
+//login
 export const login = async (req, res) => {
   try {
     const { userName, password, emailAddress } = req.body;
@@ -231,6 +389,7 @@ export const login = async (req, res) => {
   }
 };
 
+//logout
 export const logout = async (req, res) => {
   try {
     const emailAddress = req.rootUser.emailAddress;
@@ -250,6 +409,7 @@ export const logout = async (req, res) => {
   }
 };
 
+//get user profile
 export const getUserProfile = async (req, res) => {
   try {
     const emailAddress = req.rootUser.emailAddress;
@@ -257,10 +417,18 @@ export const getUserProfile = async (req, res) => {
     const user = await userModel
       .findOne({ emailAddress })
       .select("-password")
-      .populate("posts")
+      .populate({
+        path: "posts",
+        options: { sort: { createdAt: -1 } },
+        populate: {
+          path: "Comments", // Assuming your posts model has a field 'Comments'
+          options: { sort: { createdAt: -1 } }, // Optional: sort Comments by createdAt
+        },
+      })
       .populate("acceptedRequests")
       .populate("pendingRequests")
       .populate("sentRequests");
+
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -273,12 +441,37 @@ export const getUserProfile = async (req, res) => {
   }
 };
 
+//get friends profile
+export const getFriendsProfile = async (req, res) => {
+  try {
+    const id = req.rootUser._id;
+    const friendsProfile = await userModel
+      .find({ acceptedRequests: id })
+      .select("-password")
+      .populate({
+        path: "posts",
+        options: { sort: { createdAt: -1 } },
+        populate: {
+          path: "Comments",
+          options: { sort: { createdAt: -1 } },
+          populate: {
+            path: "givingUser",
+          },
+        },
+      });
+    if (!friendsProfile) {
+      return res.status(404).json({ message: "Friends not found" });
+    }
+    res.status(200).json({ message: "Friends Profile", friendsProfile });
+  } catch (error) {
+    console.error(error.message);
+    res
+      .status(500)
+      .json({ message: "An error occurred while getting Friends Profile" });
+  }
+};
 
-//change profile picture
-//change username
-//change password
-//forget password
-
+//send friend request
 export const sendFriendRequests = async (req, res) => {
   try {
     const user = await userModel.findOne({ _id: req.rootUser._id });
@@ -318,6 +511,7 @@ export const sendFriendRequests = async (req, res) => {
   }
 };
 
+//accept friend request
 export const acceptRequest = async (req, res) => {
   try {
     const user = await userModel.findOne({ _id: req.rootUser._id });
@@ -355,6 +549,7 @@ export const acceptRequest = async (req, res) => {
   }
 };
 
+//reject friend request
 export const rejectRequest = async (req, res) => {
   try {
     const user = await userModel.findOne({ _id: req.rootUser._id });
@@ -386,6 +581,7 @@ export const rejectRequest = async (req, res) => {
   }
 };
 
+//remove friend
 export const removeFriend = async (req, res) => {
   try {
     const user = await userModel.findOne({ _id: req.rootUser._id });
@@ -421,4 +617,10 @@ export const removeFriend = async (req, res) => {
       .status(500)
       .json({ message: "An error occurred while removing friends." });
   }
+};
+
+export const getUserById = async (req, res) => {
+  const { id } = req.params;
+  const user = await userModel.findOne({ _id: id });
+  res.json({ user });
 };
